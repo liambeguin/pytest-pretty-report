@@ -46,7 +46,15 @@ uv venv && uv pip install -e . pytest
 .venv/bin/python -m pytest
 ```
 
+## End-of-run report
+
+The rich reporter reproduces pytest's end-of-run output: failure tracebacks
+with captured stdout/stderr/log (`--show-capture`), the warnings summary,
+sections added by other plugins through `pytest_terminal_summary`
+(`--durations`, coverage, ...) and the `short test summary info` driven by
+`-r`.
+
 ## Known limitations
 
-`--pretty` replaces pytest's terminal reporter, so `pytest_terminal_summary`
-sections from other plugins and the warnings summary are not shown.
+- `-q`/`-qq` and xdist output are not specially handled yet.
+- `pytest_report_header` and other header sections are not printed.
