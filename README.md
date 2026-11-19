@@ -46,6 +46,27 @@ uv venv && uv pip install -e . pytest
 .venv/bin/python -m pytest
 ```
 
+## Editing the live progress line
+
+Request the `pretty_progress` fixture to show a status message and/or a
+progress bar under the running test:
+
+```python
+def test_import(pretty_progress):
+    pretty_progress.update(total=len(files))
+    for f in files:
+        pretty_progress.advance(message=f'importing {f.name}')
+        do_import(f)
+```
+
+- `update(message=None, completed=None, total=None)` sets any of the fields
+  and keeps the ones left out.
+- `advance(step=1, message=None)` moves the bar forward.
+- `message`, `completed` and `total` can be read back.
+
+With `--no-pretty` (or any run without the pretty reporter) the fixture keeps
+the same state but draws nothing, so tests don't need to care.
+
 ## End-of-run report
 
 The rich reporter reproduces pytest's end-of-run output: failure tracebacks
