@@ -90,7 +90,7 @@ def pretty_progress(request):
 
 def check_bounds(duration: float, mark) -> str | None:
     """Return a failure message when ``duration`` is outside the mark's bounds."""
-    low, high = mark.kwargs.get('min'), mark.kwargs.get('max')
+    low, high = mark.kwargs.get('min_runtime'), mark.kwargs.get('max_runtime')
     took = format_duration(duration)
     if low is not None and duration < low.total_seconds():
         return f'test ran for {took}, below the minimum of {format_duration(low.total_seconds())}'

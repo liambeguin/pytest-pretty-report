@@ -1,4 +1,4 @@
-'''slow(min=..., max=...) fails tests whose body runs outside the bounds.'''
+'''slow(min_runtime=..., max_runtime=...) fails tests whose body runs outside the bounds.'''
 
 import pytest
 
@@ -18,7 +18,7 @@ def test_too_fast_test_fails(run):
         from datetime import timedelta
         import pretty_report
 
-        @pretty_report.slow(min=timedelta(seconds=1))
+        @pretty_report.slow(min_runtime=timedelta(seconds=1))
         def test_x(): pass
         '''
     )
@@ -33,7 +33,7 @@ def test_too_slow_test_fails(run):
         from datetime import timedelta
         import pretty_report
 
-        @pretty_report.slow(max=timedelta(milliseconds=50))
+        @pretty_report.slow(max_runtime=timedelta(milliseconds=50))
         def test_x(): time.sleep(0.3)
         '''
     )
@@ -48,7 +48,7 @@ def test_within_bounds_passes(run):
         from datetime import timedelta
         import pretty_report
 
-        @pretty_report.slow(min=timedelta(milliseconds=50), max=timedelta(seconds=5))
+        @pretty_report.slow(min_runtime=timedelta(milliseconds=50), max_runtime=timedelta(seconds=5))
         def test_x(): time.sleep(0.2)
         '''
     )
@@ -61,7 +61,7 @@ def test_failing_test_keeps_its_own_failure(run):
         from datetime import timedelta
         import pretty_report
 
-        @pretty_report.slow(min=timedelta(seconds=1))
+        @pretty_report.slow(min_runtime=timedelta(seconds=1))
         def test_x(): assert 1 == 2
         '''
     )
@@ -81,7 +81,7 @@ def test_setup_time_does_not_count(run):
         @pytest.fixture
         def slow_fixture(): time.sleep(0.4)
 
-        @pretty_report.slow(max=timedelta(milliseconds=200))
+        @pretty_report.slow(max_runtime=timedelta(milliseconds=200))
         def test_x(slow_fixture): pass
         '''
     )
@@ -108,7 +108,7 @@ def test_xfail_is_not_overridden(run):
         import pretty_report
 
         @pytest.mark.xfail(reason='known')
-        @pretty_report.slow(min=timedelta(seconds=1))
+        @pretty_report.slow(min_runtime=timedelta(seconds=1))
         def test_x(): assert 0
         '''
     )
@@ -122,7 +122,7 @@ def test_short_summary_shows_the_reason(run):
         from datetime import timedelta
         import pretty_report
 
-        @pretty_report.slow(max=timedelta(milliseconds=50))
+        @pretty_report.slow(max_runtime=timedelta(milliseconds=50))
         def test_x(): time.sleep(0.3)
         '''
     )

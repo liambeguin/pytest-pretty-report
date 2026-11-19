@@ -11,20 +11,28 @@ def slow(
     func=None,
     *,
     runtime: timedelta | None = None,
-    min: timedelta | None = None,  # noqa: A002
-    max: timedelta | None = None,  # noqa: A002
+    min_runtime: timedelta | None = None,
+    max_runtime: timedelta | None = None,
 ):
     '''Mark a test as slow, optionally with an expected runtime and bounds.
 
     Usable as ``@slow``, ``@slow()`` or ``@slow(runtime=timedelta(minutes=2))``.
 
-    ``min`` and ``max`` make the test fail when its body (not its fixtures)
-    finishes in less than ``min`` or takes longer than ``max``.
+    ``min_runtime`` and ``max_runtime`` make the test fail when its body (not
+    its fixtures) finishes in less than ``min_runtime`` or takes longer than
+    ``max_runtime``. With ``--enforce-max-runtime`` a test running beyond
+    ``max_runtime`` is interrupted.
     '''
-    for name, value in (('runtime', runtime), ('min', min), ('max', max)):
+    for name, value in (
+        ('runtime', runtime),
+        ('min_runtime', min_runtime),
+        ('max_runtime', max_runtime),
+    ):
         if value is not None and not isinstance(value, timedelta):
             raise TypeError(f'{name} must be a datetime.timedelta')
-    if min is not None and max is not None and min > max:
-        raise ValueError('min must not be greater than max')
-    mark = getattr(pytest.mark, MARKER_NAME)(runtime=runtime, min=min, max=max)
+    if min_runtime is not None and max_runtime is not None and min_runtime > max_runtime:
+        raise ValueError('min_runtime must not be greater than max_runtime')
+    mark = getattr(pytest.mark, MARKER_NAME)(
+        runtime=runtime, min_runtime=min_runtime, max_runtime=max_runtime
+    )
     return mark(func) if func is not None else mark

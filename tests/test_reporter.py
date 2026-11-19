@@ -179,8 +179,8 @@ def test_final_line_shows_bounds(run):
 
         @pretty_report.slow(
             runtime=timedelta(seconds=2),
-            min=timedelta(milliseconds=10),
-            max=timedelta(minutes=1),
+            min_runtime=timedelta(milliseconds=10),
+            max_runtime=timedelta(minutes=1),
         )
         def test_slow():
             time.sleep(0.05)
@@ -197,7 +197,7 @@ def test_final_line_shows_only_max(run):
         from datetime import timedelta
         import pretty_report
 
-        @pretty_report.slow(max=timedelta(seconds=30))
+        @pretty_report.slow(max_runtime=timedelta(seconds=30))
         def test_slow(): pass
         '''
     )

@@ -44,8 +44,8 @@ class SlowInfo(NamedTuple):
 
     slow: bool = False
     expected: timedelta | None = None
-    min: timedelta | None = None
-    max: timedelta | None = None
+    min_runtime: timedelta | None = None
+    max_runtime: timedelta | None = None
 
 
 def slow_info(item) -> SlowInfo:
@@ -53,14 +53,18 @@ def slow_info(item) -> SlowInfo:
     if mark is None:
         return SlowInfo()
     kwargs = mark.kwargs
-    return SlowInfo(True, kwargs.get('runtime'), kwargs.get('min'), kwargs.get('max'))
+    return SlowInfo(True, kwargs.get('runtime'), kwargs.get('min_runtime'), kwargs.get('max_runtime'))
 
 
 def limits_text(info: SlowInfo, sep: str) -> str:
     """'expected 2m 00s, min 1.0s' style summary, joined with ``sep``."""
     parts = [
         f'{label} {format_duration(value.total_seconds())}'
-        for label, value in (('expected', info.expected), ('min', info.min), ('max', info.max))
+        for label, value in (
+            ('expected', info.expected),
+            ('min', info.min_runtime),
+            ('max', info.max_runtime),
+        )
         if value is not None
     ]
     return sep.join(parts)
@@ -334,7 +338,7 @@ class PrettyReporter:
         self._reports = []
         info = self._items.get(nodeid, SlowInfo())
         self._running = _RunningLine(
-            nodeid, info.slow, info.expected, min_runtime=info.min, max_runtime=info.max
+            nodeid, info.slow, info.expected, min_runtime=info.min_runtime, max_runtime=info.max_runtime
         )
         self._start_live(self._running)
 

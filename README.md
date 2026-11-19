@@ -43,12 +43,13 @@ runtime if given); the final line shows `took ... (expected ...)`.
 
 ```python
 @pretty_report.slow(runtime=timedelta(minutes=2),
-                    min=timedelta(seconds=30), max=timedelta(minutes=5))
+                    min_runtime=timedelta(seconds=30),
+                    max_runtime=timedelta(minutes=5))
 def test_big_import(): ...
 ```
 
-`min` and `max` turn the test into a failure when its body ran for less than
-`min` or longer than `max` (`test ran for 12s, below the minimum of 30s`).
+`min_runtime` and `max_runtime` turn the test into a failure when its body ran for less than
+`min_runtime` or longer than `max_runtime` (`test ran for 12s, below the minimum of 30s`).
 Only the test body is timed: slow fixtures don't count. The check happens
 after the test finishes, it doesn't interrupt a test that is still running,
 and it never overrides a test that already failed or an xfail. It works with
