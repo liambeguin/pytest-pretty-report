@@ -1,0 +1,68 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pytest-pretty-report"
+version = "0.1.0"
+description = "A pretty rich-based pytest reporter with slow-test progress tracking"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = ["Framework :: Pytest"]
+dependencies = [
+	"pytest>=7.0",
+	"rich>=13.0",
+]
+
+[project.entry-points.pytest11]
+pretty_report = "pretty_report.plugin"
+
+[dependency-groups]
+dev = ["pytest>=7.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pretty_report"]
+
+[tool.pytest.ini_options]
+addopts = "-p pytester"
+testpaths = ["tests"]
+
+[tool.ruff]
+indent-width = 4
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "single"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+extend-ignore = [
+	"ANN001",
+	"ANN002",
+	"ANN003",
+	"ANN201",
+	"D100",
+	"D103",
+	"EM101",
+	"EM102",
+	"INP001",
+	"S101",
+	"T201",
+	# Conflict with the formatter.
+	"D300",  # we want ''' docstrings (Q002); D300 demands """
+	"COM812",
+	"ISC001",
+]
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "single"
+inline-quotes = "single"
+multiline-quotes = "single"
+
+[tool.ruff.lint.isort]
+lines-between-types = 1
+order-by-type = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
