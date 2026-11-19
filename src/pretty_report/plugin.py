@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from .format import format_duration
 from .markers import MARKER_NAME
 
 
@@ -85,3 +86,29 @@ def pretty_progress(request):
     if isinstance(reporter, PrettyReporter) and reporter.running_line is not None:
         return Progress(reporter.running_line)
     return NullProgress()
+
+
+def check_bounds(duration: float, mark) -> str | None:
+    """Return a failure message when ``duration`` is outside the mark's bounds."""
+    low, high = mark.kwargs.get('min'), mark.kwargs.get('max')
+    took = format_duration(duration)
+    if low is not None and duration < low.total_seconds():
+        return f'test ran for {took}, below the minimum of {format_duration(low.total_seconds())}'
+    if high is not None and duration > high.total_seconds():
+        return (
+            f'test ran for {took}, exceeded the maximum of {format_duration(high.total_seconds())}'
+        )
+    return None
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    mark = item.get_closest_marker(MARKER_NAME)
+    if mark is None or call.when != 'call' or not report.passed or hasattr(report, 'wasxfail'):
+        return
+    message = check_bounds(report.duration, mark)
+    if message is not None:
+        report.outcome = 'failed'
+        report.longrepr = message

@@ -375,8 +375,11 @@ class PrettyReporter:
     @staticmethod
     def _crash_line(report):
         """First line of the crash message, or '' when there is none."""
-        crash = getattr(report.longrepr, 'reprcrash', None)
-        message = getattr(crash, 'message', '') or ''
+        if isinstance(report.longrepr, str):  # e.g. set by a plugin
+            message = report.longrepr
+        else:
+            crash = getattr(report.longrepr, 'reprcrash', None)
+            message = getattr(crash, 'message', '') or ''
         return message.splitlines()[0] if message else ''
 
     def _skip_lines(self):
