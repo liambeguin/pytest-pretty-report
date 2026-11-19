@@ -48,12 +48,25 @@ runtime if given); the final line shows `took ... (expected ...)`.
 def test_big_import(): ...
 ```
 
-`min_runtime` and `max_runtime` turn the test into a failure when its body ran for less than
-`min_runtime` or longer than `max_runtime` (`test ran for 12s, below the minimum of 30s`).
-Only the test body is timed: slow fixtures don't count. The check happens
-after the test finishes, it doesn't interrupt a test that is still running,
-and it never overrides a test that already failed or an xfail. It works with
-and without `--pretty`.
+`min_runtime` and `max_runtime` turn the test into a failure when its body
+ran for less than `min_runtime` or longer than `max_runtime` (`test ran for
+12s, below the minimum of 30s`). Only the test body is timed: slow fixtures
+don't count. By default the check happens after the test finishes. It never
+overrides a test that already failed or an xfail, and works with and without
+`--pretty`.
+
+### Interrupting tests that run too long
+
+Pass `--enforce-max-runtime` (or set `enforce_max_runtime = true` in the ini
+file) to interrupt a test as soon as it runs past its `max_runtime`. It fails
+with `test interrupted after 5m 00s: exceeded the maximum of 5m 00s`, and its
+fixtures are still torn down normally.
+
+The interruption uses `SIGALRM`, so it needs a POSIX platform and the main
+thread; elsewhere a warning is emitted and the test runs to completion. Like
+any signal-based timeout it cannot break out of a blocking C call that never
+returns to the interpreter, and a test that swallows exceptions can swallow the
+interruption.
 
 ## Development
 

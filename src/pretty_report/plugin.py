@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import signal
+import threading
+import warnings
+
 import pytest
 
 from .format import format_duration
@@ -25,6 +29,19 @@ def pytest_addoption(parser):
         const=False,
         help="Use pytest's default terminal reporter.",
     )
+    group.addoption(
+        '--enforce-max-runtime',
+        dest='enforce_max_runtime',
+        action='store_true',
+        default=None,
+        help='Interrupt slow() tests that run beyond their max_runtime.',
+    )
+    parser.addini(
+        'enforce_max_runtime',
+        type='bool',
+        default=False,
+        help='Interrupt slow() tests that run beyond their max_runtime.',
+    )
     parser.addini(
         'pretty_report',
         type='bool',
@@ -44,8 +61,10 @@ def _enabled(config) -> bool:
 def pytest_configure(config):
     config.addinivalue_line(
         'markers',
-        f'{MARKER_NAME}(runtime=None): mark a slow test; the pretty reporter '
-        'shows its elapsed time and the optional expected runtime (timedelta).',
+        f'{MARKER_NAME}(runtime=None, min_runtime=None, max_runtime=None): mark a '
+        'slow test; the pretty reporter shows its elapsed time and the optional '
+        'expected runtime; min_runtime/max_runtime (timedelta) fail the test '
+        'when its body runs outside them.',
     )
     if not _enabled(config) or config.option.collectonly:
         return
@@ -112,3 +131,50 @@ def pytest_runtest_makereport(item, call):
     if message is not None:
         report.outcome = 'failed'
         report.longrepr = message
+
+
+def _enforcing(config) -> bool:
+    explicit = config.getoption('enforce_max_runtime')
+    if explicit is not None:
+        return explicit
+    return config.getini('enforce_max_runtime')
+
+
+def _can_interrupt() -> bool:
+    return hasattr(signal, 'setitimer') and threading.current_thread() is threading.main_thread()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    '''Interrupt the test body once it runs past ``max_runtime``.'''
+    mark = item.get_closest_marker(MARKER_NAME)
+    high = mark.kwargs.get('max_runtime') if mark is not None else None
+    if high is None or not _enforcing(item.config):
+        yield
+        return
+    if not _can_interrupt():
+        warnings.warn(
+            pytest.PytestWarning(
+                f'{item.nodeid}: --enforce-max-runtime needs signal.setitimer on the main '
+                'thread; the test will not be interrupted'
+            ),
+            stacklevel=1,
+        )
+        yield
+        return
+
+    message = (
+        f'test interrupted after {format_duration(high.total_seconds())}: '
+        f'exceeded the maximum of {format_duration(high.total_seconds())}'
+    )
+
+    def interrupt(signum, frame):
+        pytest.fail(message, pytrace=False)
+
+    previous = signal.signal(signal.SIGALRM, interrupt)
+    signal.setitimer(signal.ITIMER_REAL, high.total_seconds())
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
