@@ -9,6 +9,7 @@ from datetime import timedelta
 
 import pytest
 
+from _pytest.config import create_terminal_writer
 from rich.console import Console
 from rich.live import Live
 from rich.rule import Rule
@@ -96,12 +97,17 @@ class _RunningLine:
 class PrettyReporter:
     def __init__(self, config, console: Console | None = None):
         self.config = config
-        # pytest internals (assertion rewriting etc.) expect a `_tw` writer on
-        # whatever is registered as "terminalreporter".
-        self._tw = config.get_terminal_writer()
         self._dup_file = None
-        self.console = console or Console(file=self._open_output())
+        out = self._open_output(config.get_terminal_writer()._file)
+        # pytest internals (assertion rewriting etc.) and other plugins expect a
+        # `_tw` writer on whatever is registered as "terminalreporter". It shares
+        # the file with the rich console so their output stays ordered.
+        self._tw = create_terminal_writer(config, out)
+        self.console = console or Console(file=out)
+        # Same layout as TerminalReporter.stats: {category: [reports]}.
         self.stats: dict[str, list] = {}
+        # Per-test outcomes used for our own summary: {'passed': [report], ...}.
+        self._results: dict[str, list] = {}
         self._items: dict[str, tuple[bool, timedelta | None]] = {}
         self._total = 0
         self._done = 0
@@ -111,7 +117,7 @@ class PrettyReporter:
         self._running: _RunningLine | None = None
         self._start = time.perf_counter()
 
-    def _open_output(self):
+    def _open_output(self, stream):
         """Return a file bound to the *real* terminal.
 
         Under pytest's fd-capture, fd 1 is redirected while a test runs, so the
@@ -120,7 +126,6 @@ class PrettyReporter:
         keeps pointing at the terminal, so the spinner animates with or
         without ``-s``.
         """
-        stream = self._tw._file
         try:
             self._dup_file = os.fdopen(
                 os.dup(stream.fileno()), 'w', encoding='utf-8', errors='replace'
@@ -128,6 +133,41 @@ class PrettyReporter:
         except (AttributeError, OSError, ValueError):  # no real fd (e.g. StringIO)
             return stream
         return self._dup_file
+
+    # -- API expected by plugins that talk to the terminal reporter ----------
+    @property
+    def hasmarkup(self):
+        return self._tw.hasmarkup
+
+    @property
+    def verbosity(self):
+        return self.config.get_verbosity()
+
+    def write(self, content, *, flush=False, **markup):
+        self._tw.write(content, flush=flush, **markup)
+
+    def write_line(self, line, **markup):
+        self._tw.line(str(line), **markup)
+
+    line = write_line
+
+    def write_sep(self, sep, title=None, fullwidth=None, **markup):
+        self._tw.sep(sep, title, fullwidth, **markup)
+
+    def section(self, title, sep='=', **kw):
+        self.write_sep(sep, title, **kw)
+
+    def ensure_newline(self):
+        pass  # every write goes through whole lines
+
+    def getreports(self, name):
+        return list(self.stats.get(name, []))
+
+    def _record(self, report):
+        category, _, _ = self.config.hook.pytest_report_teststatus(
+            report=report, config=self.config
+        )
+        self.stats.setdefault(category, []).append(report)
 
     def pytest_unconfigure(self):
         if self._dup_file is not None:
@@ -162,6 +202,10 @@ class PrettyReporter:
             )
         if report.failed:
             self.stats.setdefault('error', []).append(report)
+        elif report.skipped:
+            self.stats.setdefault('skipped', []).append(report)
+        if report.failed:
+            self._results.setdefault('error', []).append(report)
             self.console.print(Text(f'ERROR collecting {report.nodeid}', style='bold red'))
             self.console.print(Text(report.longreprtext), highlight=False)
 
@@ -196,12 +240,13 @@ class PrettyReporter:
 
     def pytest_runtest_logreport(self, report):
         self._reports.append(report)
+        self._record(report)
 
     def pytest_runtest_logfinish(self, nodeid, location):
         self._stop_live()
         self._done += 1
         label, key, final = self._classify(self._reports)
-        self.stats.setdefault(key, []).append(final)
+        self._results.setdefault(key, []).append(final)
 
         slow, expected = self._items.get(nodeid, (False, None))
         line = Text()
@@ -239,7 +284,7 @@ class PrettyReporter:
     # -- end ---------------------------------------------------------------
     def pytest_sessionfinish(self, session, exitstatus):
         self._stop_live()  # e.g. interrupted during collection
-        failures = [r for k in ('failed', 'error') for r in self.stats.get(k, [])]
+        failures = [r for k in ('failed', 'error') for r in self._results.get(k, [])]
         for rep in failures:
             self.console.print(Rule(f'{rep.nodeid} ({rep.when})', style='red'))
             self.console.print(Text(rep.longreprtext), highlight=False)
@@ -252,7 +297,7 @@ class PrettyReporter:
             ('xfailed', 'yellow'),
             ('xpassed', 'yellow'),
         ):
-            n = len(self.stats.get(key, []))
+            n = len(self._results.get(key, []))
             if n:
                 parts.append((f'{n} {key}', style))
         elapsed = time.perf_counter() - self._start
