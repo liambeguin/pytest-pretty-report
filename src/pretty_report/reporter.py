@@ -39,18 +39,37 @@ STYLES = {
 }
 
 
-def slow_runtime(item):
-    '''Return (is_slow, expected_runtime) for a collected item.'''
+class SlowInfo(NamedTuple):
+    '''What the ``slow`` marker says about a test.'''
+
+    slow: bool = False
+    expected: timedelta | None = None
+    min: timedelta | None = None
+    max: timedelta | None = None
+
+
+def slow_info(item) -> SlowInfo:
     mark = item.get_closest_marker(MARKER_NAME)
     if mark is None:
-        return False, None
-    return True, mark.kwargs.get('runtime')
+        return SlowInfo()
+    kwargs = mark.kwargs
+    return SlowInfo(True, kwargs.get('runtime'), kwargs.get('min'), kwargs.get('max'))
 
 
-def timing_text(elapsed: float, expected: timedelta | None) -> str:
+def limits_text(info: SlowInfo, sep: str) -> str:
+    """'expected 2m 00s, min 1.0s' style summary, joined with ``sep``."""
+    parts = [
+        f'{label} {format_duration(value.total_seconds())}'
+        for label, value in (('expected', info.expected), ('min', info.min), ('max', info.max))
+        if value is not None
+    ]
+    return sep.join(parts)
+
+
+def timing_text(elapsed: float, info: SlowInfo) -> str:
     text = f'took {format_duration(elapsed)}'
-    if expected is not None:
-        text += f' (expected {format_duration(expected.total_seconds())})'
+    if limits := limits_text(info, ', '):
+        text += f' ({limits})'
     return text
 
 
@@ -100,8 +119,17 @@ class _RunningLine:
     are visible too.
     '''
 
-    def __init__(self, nodeid, slow, expected, threshold: float = SHOW_TIMING_AFTER):
+    def __init__(
+        self,
+        nodeid,
+        slow,
+        expected,
+        threshold: float = SHOW_TIMING_AFTER,
+        min_runtime: timedelta | None = None,
+        max_runtime: timedelta | None = None,
+    ):
         self.nodeid, self.slow, self.expected = nodeid, slow, expected
+        self.limits = SlowInfo(slow, expected, min_runtime, max_runtime)
         self.threshold = threshold
         self.phase = 'setting up'
         self.started = time.perf_counter()
@@ -116,8 +144,8 @@ class _RunningLine:
         elapsed = time.perf_counter() - self.started
         if self.slow or elapsed >= self.threshold:
             info = f'{self.phase} {format_duration(elapsed)}'
-            if self.expected is not None:
-                info += f' / expected {format_duration(self.expected.total_seconds())}'
+            if limits := limits_text(self.limits, ' / '):
+                info += f' / {limits}'
             table.add_row('', Text(info, style='cyan'))
         if self.message or self.total is not None:
             table.add_row('', self._progress_row())
@@ -159,7 +187,7 @@ class PrettyReporter:
         self.stats: dict[str, list] = {}
         # Per-test outcomes used for our own summary: {'passed': [report], ...}.
         self._results: dict[str, list] = {}
-        self._items: dict[str, tuple[bool, timedelta | None]] = {}
+        self._items: dict[str, SlowInfo] = {}
         self._total = 0
         self._done = 0
         self._reports: list = []
@@ -284,7 +312,7 @@ class PrettyReporter:
     def pytest_collection_finish(self, session):
         self._stop_live()
         self._total = len(session.items)
-        self._items = {i.nodeid: slow_runtime(i) for i in session.items}
+        self._items = {i.nodeid: slow_info(i) for i in session.items}
         self.console.print(f'collected {self._total} item{"s" if self._total != 1 else ""}\n')
 
     def pytest_collectreport(self, report):
@@ -304,8 +332,10 @@ class PrettyReporter:
     # -- per test ----------------------------------------------------------
     def pytest_runtest_logstart(self, nodeid, location):
         self._reports = []
-        slow, expected = self._items.get(nodeid, (False, None))
-        self._running = _RunningLine(nodeid, slow, expected)
+        info = self._items.get(nodeid, SlowInfo())
+        self._running = _RunningLine(
+            nodeid, info.slow, info.expected, min_runtime=info.min, max_runtime=info.max
+        )
         self._start_live(self._running)
 
     @property
@@ -339,15 +369,15 @@ class PrettyReporter:
         label, key, final = self._classify(self._reports)
         self._results.setdefault(key, []).append(final)
 
-        slow, expected = self._items.get(nodeid, (False, None))
+        info = self._items.get(nodeid, SlowInfo())
         line = Text()
         line.append(nodeid + ' ')
         line.append(label, style=STYLES[label])
         pct = int(100 * self._done / self._total) if self._total else 100
         line.append(f'  [{pct:3d}%]', style='dim')
-        if slow:
+        if info.slow:
             elapsed = sum(r.duration for r in self._reports)
-            line.append('  ' + timing_text(elapsed, expected), style='cyan')
+            line.append('  ' + timing_text(elapsed, info), style='cyan')
         self.console.print(line, highlight=False, soft_wrap=True)
 
     @staticmethod

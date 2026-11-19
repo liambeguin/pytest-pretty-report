@@ -168,3 +168,37 @@ class TestEnablement:
         pytester.makepyfile('def test_a(): pass')
         result = pytester.runpytest_subprocess('--collect-only', '-q')
         result.stdout.fnmatch_lines(['*::test_a'])
+
+
+def test_final_line_shows_bounds(run):
+    result = run(
+        '''
+        import time
+        from datetime import timedelta
+        import pretty_report
+
+        @pretty_report.slow(
+            runtime=timedelta(seconds=2),
+            min=timedelta(milliseconds=10),
+            max=timedelta(minutes=1),
+        )
+        def test_slow():
+            time.sleep(0.05)
+        '''
+    )
+    result.stdout.re_match_lines(
+        [r'.*::test_slow PASSED\s+\[100%\]\s+took \d+ms \(expected 2\.0s, min 10ms, max 1m 00s\)']
+    )
+
+
+def test_final_line_shows_only_max(run):
+    result = run(
+        '''
+        from datetime import timedelta
+        import pretty_report
+
+        @pretty_report.slow(max=timedelta(seconds=30))
+        def test_slow(): pass
+        '''
+    )
+    result.stdout.re_match_lines([r'.*::test_slow PASSED\s+\[100%\]\s+took \S+ \(max 30\.0s\)'])

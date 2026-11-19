@@ -87,3 +87,17 @@ def test_running_line_shows_progress_bar_counts():
 def test_running_line_has_no_progress_row_by_default():
     out = render(_RunningLine('t.py::test_x', False, None))
     assert '/' not in out.replace('t.py::test_x', '')
+
+
+def test_running_line_shows_bounds():
+    line = _RunningLine(
+        't.py::test_x',
+        True,
+        None,
+        min_runtime=timedelta(seconds=1),
+        max_runtime=timedelta(minutes=2),
+    )
+    line.phase = 'running'
+    out = render(line)
+    assert 'min 1.0s' in out
+    assert 'max 2m 00s' in out
