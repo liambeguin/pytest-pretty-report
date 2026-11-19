@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 import warnings
+from pathlib import Path
 
 from datetime import timedelta
 from typing import NamedTuple
@@ -12,6 +13,8 @@ from typing import NamedTuple
 import pytest
 
 from _pytest.config import create_terminal_writer
+from _pytest.pathlib import bestrelpath
+from _pytest.terminal import getreportopt
 from rich.console import Console
 from rich.live import Live
 from rich.rule import Rule
@@ -293,6 +296,63 @@ class PrettyReporter:
             return 'PASSED', 'passed', call
         return 'PASSED', 'passed', reports[-1]
 
+    @staticmethod
+    def _crash_line(report):
+        """First line of the crash message, or '' when there is none."""
+        crash = getattr(report.longrepr, 'reprcrash', None)
+        message = getattr(crash, 'message', '') or ''
+        return message.splitlines()[0] if message else ''
+
+    def _skip_lines(self):
+        skips: dict[tuple, int] = {}
+        for rep in self._results.get('skipped', []):
+            path, lineno, reason = rep.longrepr
+            key = (
+                bestrelpath(self.config.invocation_params.dir, Path(path)),
+                lineno,
+                reason.removeprefix('Skipped: '),
+            )
+            skips[key] = skips.get(key, 0) + 1
+        return [
+            ('SKIPPED', f'[{count}] {path}:{lineno}: {reason}', 'yellow')
+            for (path, lineno, reason), count in skips.items()
+        ]
+
+    def _outcome_lines(self, key, word, style, detail):
+        return [
+            (word, f'{rep.nodeid} - {info}' if (info := detail(rep)) else rep.nodeid, style)
+            for rep in self._results.get(key, [])
+        ]
+
+    def _short_summary_lines(self):
+        '''Lines for the -r characters, in the order pytest would print them.'''
+        sections = {
+            'f': lambda: self._outcome_lines('failed', 'FAILED', 'bold red', self._crash_line),
+            'E': lambda: self._outcome_lines('error', 'ERROR', 'bold red', self._crash_line),
+            's': self._skip_lines,
+            'x': lambda: self._outcome_lines('xfailed', 'XFAIL', 'yellow', lambda r: r.wasxfail),
+            'X': lambda: self._outcome_lines('xpassed', 'XPASS', 'yellow', lambda r: r.wasxfail),
+            'p': lambda: self._outcome_lines('passed', 'PASSED', 'green', lambda r: ''),
+        }
+        sections['P'] = sections['p']
+        lines, seen = [], set()
+        for char in getreportopt(self.config):
+            if char in sections and sections[char] not in seen:
+                seen.add(sections[char])
+                lines.extend(sections[char]())
+        return lines
+
+    def _print_short_summary(self):
+        lines = self._short_summary_lines()
+        if not lines:
+            return
+        self.console.print(Rule('short test summary info', style='dim'))
+        for word, text, style in lines:
+            line = Text()
+            line.append(word, style=style)
+            line.append(' ' + text)
+            self.console.print(line, highlight=False, soft_wrap=True)
+
     def pytest_warning_recorded(self, warning_message, when, nodeid, location):
         text = warnings.formatwarning(
             warning_message.message,
@@ -341,6 +401,7 @@ class PrettyReporter:
         self.config.hook.pytest_terminal_summary(
             terminalreporter=self, exitstatus=exitstatus, config=self.config
         )
+        self._print_short_summary()
         parts = []
         for key, style in (
             ('failed', 'bold red'),
