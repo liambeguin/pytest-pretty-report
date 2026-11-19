@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import os
 import time
+import warnings
 
 from datetime import timedelta
+from typing import NamedTuple
 
 import pytest
 
@@ -92,6 +94,16 @@ class _RunningLine:
                 info += f' / expected {format_duration(self.expected.total_seconds())}'
             table.add_row('', Text(info, style='cyan'))
         return table
+
+
+class WarningEntry(NamedTuple):
+    """One recorded warning, stored in ``stats['warnings']``."""
+
+    nodeid: str
+    message: str
+
+
+WARNINGS_DOCS = 'https://docs.pytest.org/en/stable/how-to/capture-warnings.html'
 
 
 class PrettyReporter:
@@ -281,6 +293,30 @@ class PrettyReporter:
             return 'PASSED', 'passed', call
         return 'PASSED', 'passed', reports[-1]
 
+    def pytest_warning_recorded(self, warning_message, when, nodeid, location):
+        text = warnings.formatwarning(
+            warning_message.message,
+            warning_message.category,
+            warning_message.filename,
+            warning_message.lineno,
+            warning_message.line,
+        )
+        self.stats.setdefault('warnings', []).append(WarningEntry(nodeid or when, text.rstrip()))
+
+    def _print_warnings(self):
+        entries = self.stats.get('warnings', [])
+        if not entries:
+            return
+        self.console.print(Rule('warnings summary', style='yellow'))
+        by_node: dict[str, list[str]] = {}
+        for entry in entries:
+            by_node.setdefault(entry.nodeid, []).append(entry.message)
+        for nodeid, messages in by_node.items():
+            self.console.print(Text(nodeid, style='bold'))
+            for message in messages:
+                self.console.print(Text(message), highlight=False)
+        self.console.print(Text(f'-- Docs: {WARNINGS_DOCS}', style='dim'))
+
     def _print_captured(self, report):
         '''Print captured stdout/stderr/log sections honoring --show-capture.'''
         mode = self.config.option.showcapture
@@ -300,6 +336,7 @@ class PrettyReporter:
             self.console.print(Rule(f'{rep.nodeid} ({rep.when})', style='red'))
             self.console.print(Text(rep.longreprtext), highlight=False)
             self._print_captured(rep)
+        self._print_warnings()
         # Sections added by other plugins (--durations, coverage, ...).
         self.config.hook.pytest_terminal_summary(
             terminalreporter=self, exitstatus=exitstatus, config=self.config
@@ -316,6 +353,9 @@ class PrettyReporter:
             n = len(self._results.get(key, []))
             if n:
                 parts.append((f'{n} {key}', style))
+        n_warn = len(self.stats.get('warnings', []))
+        if n_warn:
+            parts.append((f'{n_warn} warning{"s" if n_warn != 1 else ""}', 'yellow'))
         elapsed = time.perf_counter() - self._start
         line = Text()
         for i, (txt, style) in enumerate(parts):
