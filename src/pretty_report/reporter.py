@@ -288,6 +288,10 @@ class PrettyReporter:
         for rep in failures:
             self.console.print(Rule(f'{rep.nodeid} ({rep.when})', style='red'))
             self.console.print(Text(rep.longreprtext), highlight=False)
+        # Sections added by other plugins (--durations, coverage, ...).
+        self.config.hook.pytest_terminal_summary(
+            terminalreporter=self, exitstatus=exitstatus, config=self.config
+        )
         parts = []
         for key, style in (
             ('failed', 'bold red'),
