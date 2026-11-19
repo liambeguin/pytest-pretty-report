@@ -281,6 +281,17 @@ class PrettyReporter:
             return 'PASSED', 'passed', call
         return 'PASSED', 'passed', reports[-1]
 
+    def _print_captured(self, report):
+        '''Print captured stdout/stderr/log sections honoring --show-capture.'''
+        mode = self.config.option.showcapture
+        if mode == 'no':
+            return
+        for title, content in report.sections:
+            if mode != 'all' and mode not in title.lower():
+                continue
+            self.console.print(Rule(title, style='dim'))
+            self.console.print(Text(content.rstrip('\n')), highlight=False)
+
     # -- end ---------------------------------------------------------------
     def pytest_sessionfinish(self, session, exitstatus):
         self._stop_live()  # e.g. interrupted during collection
@@ -288,6 +299,7 @@ class PrettyReporter:
         for rep in failures:
             self.console.print(Rule(f'{rep.nodeid} ({rep.when})', style='red'))
             self.console.print(Text(rep.longreprtext), highlight=False)
+            self._print_captured(rep)
         # Sections added by other plugins (--durations, coverage, ...).
         self.config.hook.pytest_terminal_summary(
             terminalreporter=self, exitstatus=exitstatus, config=self.config
