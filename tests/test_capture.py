@@ -102,3 +102,21 @@ def test_slow_session_fixture_labelled_and_timed(pytester, run_in_pty):
     )
     out = run_in_pty('test_slow_session_fixture_labelled_and_timed.py')
     assert 'setting up 2.' in out, out
+
+
+def test_progress_fixture_updates_are_drawn(pytester, run_in_pty):
+    pytester.makepyfile(
+        '''
+        import time
+
+        def test_progress(pretty_progress):
+            pretty_progress.update(total=4)
+            for i in range(4):
+                pretty_progress.advance(message=f'chunk-{i}')
+                time.sleep(0.3)
+        '''
+    )
+    out = run_in_pty('test_progress_fixture_updates_are_drawn.py')
+    assert 'chunk-0' in out, out
+    assert 'chunk-3' in out, out
+    assert '3/4' in out, out

@@ -17,6 +17,7 @@ from _pytest.pathlib import bestrelpath
 from _pytest.terminal import getreportopt
 from rich.console import Console
 from rich.live import Live
+from rich.progress_bar import ProgressBar
 from rich.rule import Rule
 from rich.spinner import Spinner
 from rich.table import Table
@@ -86,6 +87,10 @@ class _RunningLine:
         self.threshold = threshold
         self.phase = 'setting up'
         self.started = time.perf_counter()
+        # Edited by tests through the ``pretty_progress`` fixture.
+        self.message: str | None = None
+        self.completed: float = 0
+        self.total: float | None = None
 
     def __rich__(self):
         table = Table.grid(padding=(0, 1))
@@ -96,7 +101,20 @@ class _RunningLine:
             if self.expected is not None:
                 info += f' / expected {format_duration(self.expected.total_seconds())}'
             table.add_row('', Text(info, style='cyan'))
+        if self.message or self.total is not None:
+            table.add_row('', self._progress_row())
         return table
+
+    def _progress_row(self):
+        row = Table.grid(padding=(0, 1))
+        cells = []
+        if self.total is not None:
+            cells.append(ProgressBar(total=self.total, completed=self.completed, width=24))
+            cells.append(Text(f'{self.completed:g}/{self.total:g}'))
+        if self.message:
+            cells.append(Text(self.message))
+        row.add_row(*cells)
+        return row
 
 
 class WarningEntry(NamedTuple):
@@ -236,6 +254,11 @@ class PrettyReporter:
             refresh_per_second=10,
         )
         self._live.start()
+
+    @property
+    def running_line(self) -> _RunningLine | None:
+        '''Live line of the test being run, if any.'''
+        return self._running
 
     def _set_phase(self, phase):
         if self._running is not None:

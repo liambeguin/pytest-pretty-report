@@ -57,3 +57,19 @@ def pytest_configure(config):
     reporter = PrettyReporter(config)  # needs the default reporter's writer
     pm.unregister(default)
     pm.register(reporter, 'terminalreporter')
+
+
+@pytest.fixture
+def pretty_progress(request):
+    '''Edit the live progress line of the running test.
+
+    ``pretty_progress.update(message=..., completed=..., total=...)`` and
+    ``pretty_progress.advance()``. A no-op when the pretty reporter is off.
+    '''
+    from .progress import NullProgress, Progress
+    from .reporter import PrettyReporter
+
+    reporter = request.config.pluginmanager.getplugin('terminalreporter')
+    if isinstance(reporter, PrettyReporter) and reporter.running_line is not None:
+        return Progress(reporter.running_line)
+    return NullProgress()

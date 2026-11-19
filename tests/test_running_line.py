@@ -69,3 +69,21 @@ def test_collecting_line_shows_elapsed_past_threshold():
     assert '1.' not in render(line)
     line.started -= 3
     assert '3.0s' in render(line)
+
+
+def test_running_line_shows_user_message():
+    line = _RunningLine('t.py::test_x', False, None)
+    line.message = 'uploading chunk 3'
+    assert 'uploading chunk 3' in render(line)
+
+
+def test_running_line_shows_progress_bar_counts():
+    line = _RunningLine('t.py::test_x', False, None)
+    line.total = 10
+    line.completed = 3
+    assert '3/10' in render(line)
+
+
+def test_running_line_has_no_progress_row_by_default():
+    out = render(_RunningLine('t.py::test_x', False, None))
+    assert '/' not in out.replace('t.py::test_x', '')
