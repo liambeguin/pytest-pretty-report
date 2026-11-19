@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 import warnings
 from pathlib import Path
@@ -16,6 +17,7 @@ from _pytest.config import create_terminal_writer
 from _pytest.pathlib import bestrelpath
 from _pytest.terminal import getreportopt
 from rich.console import Console
+from rich.file_proxy import FileProxy
 from rich.live import Live
 from rich.progress_bar import ProgressBar
 from rich.rule import Rule
@@ -49,6 +51,21 @@ def timing_text(elapsed: float, expected: timedelta | None) -> str:
     if expected is not None:
         text += f' (expected {format_duration(expected.total_seconds())})'
     return text
+
+
+class _OutputProxy(FileProxy):
+    """Route text written by tests above the live display.
+
+    rich's own FileProxy advertises the real file through ``rich_proxied_file``,
+    which makes every ``Console()`` created without an explicit file (so also
+    ``rich.print``) unwrap it and write straight to the terminal, leaving the
+    spinner row behind. Advertising ourselves keeps those consoles going
+    through the live display.
+    """
+
+    @property
+    def rich_proxied_file(self):
+        return self
 
 
 SHOW_TIMING_AFTER = 2.0  # seconds before a regular test gets a timing row
@@ -146,6 +163,7 @@ class PrettyReporter:
         self._done = 0
         self._reports: list = []
         self._live: Live | None = None
+        self._saved_streams = (sys.stdout, sys.stderr)
         self._collecting: _CollectingLine | None = None
         self._running: _RunningLine | None = None
         self._start = time.perf_counter()
@@ -212,15 +230,33 @@ class PrettyReporter:
         self._start = time.perf_counter()
         self.console.print(Rule('test session starts'))
         self._collecting = _CollectingLine()
+        self._start_live(self._collecting)
+
+    def _start_live(self, renderable):
         self._live = Live(
-            self._collecting, console=self.console, transient=True, refresh_per_second=10
+            renderable,
+            console=self.console,
+            transient=True,
+            refresh_per_second=10,
+            redirect_stdout=False,  # we install our own proxies below
+            redirect_stderr=False,
         )
         self._live.start()
+        self._saved_streams = (sys.stdout, sys.stderr)
+        sys.stdout = _OutputProxy(self.console, sys.stdout)
+        sys.stderr = _OutputProxy(self.console, sys.stderr)
 
     def _stop_live(self):
-        if self._live is not None:
-            self._live.stop()
-            self._live = None
+        if self._live is None:
+            return
+        # Only undo what is still ours: pytest's capture may have swapped them.
+        saved_out, saved_err = self._saved_streams
+        if isinstance(sys.stdout, _OutputProxy):
+            sys.stdout = saved_out
+        if isinstance(sys.stderr, _OutputProxy):
+            sys.stderr = saved_err
+        self._live.stop()
+        self._live = None
 
     def pytest_collection_finish(self, session):
         self._stop_live()
@@ -247,13 +283,7 @@ class PrettyReporter:
         self._reports = []
         slow, expected = self._items.get(nodeid, (False, None))
         self._running = _RunningLine(nodeid, slow, expected)
-        self._live = Live(
-            self._running,
-            console=self.console,
-            transient=True,
-            refresh_per_second=10,
-        )
-        self._live.start()
+        self._start_live(self._running)
 
     @property
     def running_line(self) -> _RunningLine | None:
