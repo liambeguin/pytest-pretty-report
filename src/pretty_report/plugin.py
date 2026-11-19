@@ -57,6 +57,18 @@ def pytest_configure(config):
     reporter = PrettyReporter(config)  # needs the default reporter's writer
     pm.unregister(default)
     pm.register(reporter, 'terminalreporter')
+    _retarget_live_logging(pm, default, reporter)
+
+
+def _retarget_live_logging(pm, old, new):
+    '''Make ``log_cli`` write through our reporter.
+
+    The logging plugin keeps the terminal reporter it found when it was
+    configured, i.e. the default one we just replaced.
+    '''
+    handler = getattr(pm.get_plugin('logging-plugin'), 'log_cli_handler', None)
+    if getattr(handler, 'stream', None) is old:
+        handler.stream = new
 
 
 @pytest.fixture

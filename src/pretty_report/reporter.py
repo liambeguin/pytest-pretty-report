@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import time
@@ -194,16 +195,24 @@ class PrettyReporter:
     def verbosity(self):
         return self.config.get_verbosity()
 
+    # These write through the terminal writer, which knows nothing about the
+    # live display, so pause it meanwhile (pytest's live logging relies on it).
     def write(self, content, *, flush=False, **markup):
-        self._tw.write(content, flush=flush, **markup)
+        with self._live_paused():
+            self._tw.write(content, flush=flush, **markup)
 
     def write_line(self, line, **markup):
-        self._tw.line(str(line), **markup)
+        with self._live_paused():
+            self._tw.line(str(line), **markup)
 
     line = write_line
 
     def write_sep(self, sep, title=None, fullwidth=None, **markup):
-        self._tw.sep(sep, title, fullwidth, **markup)
+        with self._live_paused():
+            self._tw.sep(sep, title, fullwidth, **markup)
+
+    def flush(self):
+        self._tw.flush()
 
     def section(self, title, sep='=', **kw):
         self.write_sep(sep, title, **kw)
@@ -257,6 +266,20 @@ class PrettyReporter:
             sys.stderr = saved_err
         self._live.stop()
         self._live = None
+
+    @contextlib.contextmanager
+    def _live_paused(self):
+        '''Stop the live display while something else writes to the terminal.'''
+        live = self._live
+        if live is None:
+            yield
+            return
+        renderable = live.renderable
+        self._stop_live()
+        try:
+            yield
+        finally:
+            self._start_live(renderable)
 
     def pytest_collection_finish(self, session):
         self._stop_live()

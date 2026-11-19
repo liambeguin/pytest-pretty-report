@@ -31,3 +31,22 @@ def test_rich_output_with_dash_s_leaves_no_stale_spinner_rows(pytester, pty_scre
     for text in ('PLAIN-PRINT', 'RICH-PRINT', 'CONSOLE-PRINT'):
         assert text in screen, screen  # on its own line, not glued to a spinner
     assert not any(has_spinner(line) for line in screen), screen
+
+
+def test_live_logging_does_not_corrupt_display(pytester, pty_screen):
+    pytester.makepyfile(
+        '''
+        import logging
+        import time
+
+        def test_logs():
+            logging.getLogger().warning('log-one')
+            time.sleep(0.3)
+            logging.getLogger().warning('log-two')
+            time.sleep(0.3)
+        '''
+    )
+    screen = pty_screen('-o', 'log_cli=true', '-o', 'log_cli_level=INFO')
+    assert any(line.endswith('log-one') for line in screen), screen
+    assert any(line.endswith('log-two') for line in screen), screen
+    assert not any(has_spinner(line) for line in screen), screen
