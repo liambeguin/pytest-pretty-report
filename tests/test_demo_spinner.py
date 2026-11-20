@@ -1,5 +1,6 @@
 '''Deliberately slow test so the spinner / elapsed-time display is visible.'''
 
+import os
 import time
 
 from datetime import timedelta
@@ -59,3 +60,12 @@ def test_demo_timeout(request):
     if not request.config.getoption('enforce_max_runtime'):
         pytest.skip('run with --enforce-max-runtime to see the interruption')
     time.sleep(30)
+
+
+@pytest.mark.skipif(not os.environ.get('DEMO_INPUT'), reason='set DEMO_INPUT=1 to be prompted')
+@pretty_report.slow(max_runtime=timedelta(seconds=5))
+def test_demo_user_input(pretty_input):
+    '''Run with `DEMO_INPUT=1`: asks questions, the wait is not counted in max_runtime.'''
+    name = pretty_input('Your name? ', default='world')
+    token = pretty_input('Secret (not echoed)? ', secret=True)
+    print(f'hello {name}, token has {len(token)} characters')
