@@ -75,6 +75,26 @@ uv venv && uv pip install -e . pytest
 .venv/bin/python -m pytest
 ```
 
+## Asking the user for input
+
+Request the `pretty_input` fixture to block the test until the user types an
+answer:
+
+```python
+def test_flash_board(pretty_input):
+    board = pretty_input('Board name? ', default='rpi4')
+    token = pretty_input('API token? ', secret=True)  # not echoed
+    assert pretty_input('Is the LED blinking? [y/N] ').lower() == 'y'
+```
+
+The answer is returned as a string; an empty answer gives `default` (or `''`).
+The live line is hidden while the prompt is shown, and capture is suspended so
+you can type even without `-s`. When there is no terminal on stdin (CI, a
+pipe) the test is skipped with `no terminal available for user input`. Time
+spent waiting does not count towards `min_runtime`/`max_runtime`, and the
+`--enforce-max-runtime` timer is paused meanwhile. The final `took ...` figure
+does include it.
+
 ## Editing the live progress line
 
 Request the `pretty_progress` fixture to show a status message and/or a
