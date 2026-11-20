@@ -12,7 +12,7 @@ def test_prompt_is_shown_and_answer_returned(pytester, pty_session):
     pytester.makepyfile(ASK)
     lines, code = pty_session(['--pretty'], [('Board name?', 'rpi4\n', 0.1)])
     assert code == 0, lines
-    assert any('Board name?' in line for line in lines)
+    assert any('Board name?' in line for line in pty_session.snapshots[0])
     assert '1 passed' in lines[-1]
 
 
@@ -31,7 +31,7 @@ def test_default_is_shown_and_used_on_empty_answer(pytester, pty_session):
     )
     lines, code = pty_session(['--pretty'], [('Board?', '\n', 0.1)])
     assert code == 0, lines
-    assert any('[rpi4]' in line for line in lines)
+    assert any('[rpi4]' in line for line in pty_session.snapshots[0])
 
 
 def test_secret_answer_is_not_echoed(pytester, pty_session):
@@ -46,11 +46,38 @@ def test_secret_answer_is_not_echoed(pytester, pty_session):
     assert not any('hunter2' in line for line in lines)
 
 
-def test_running_line_is_cleared_while_prompting(pytester, pty_session):
+def test_prompt_is_shown_under_the_test_name_and_indented(pytester, pty_session):
+    pytester.makepyfile(ASK)
+    pty_session(['--pretty'], [('Board name?', 'rpi4\n', 0.1)])
+    (screen,) = pty_session.snapshots
+    (name_row,) = [i for i, line in enumerate(screen) if '::test_x' in line]
+    prompt_row = next(i for i, line in enumerate(screen) if 'Board name?' in line)
+    assert prompt_row > name_row
+    assert screen[prompt_row] == '  Board name?'  # under the name, past the spinner
+
+
+def test_prompt_lines_up_with_the_slow_timing_row(pytester, pty_session):
+    pytester.makepyfile(
+        '''
+        import pretty_report
+
+        @pretty_report.slow()
+        def test_x(pretty_input):
+            pretty_input('Ready? ')
+        '''
+    )
+    pty_session(['--pretty'], [('Ready?', '\n', 0.1)])
+    (screen,) = pty_session.snapshots
+    timing = next(line for line in screen if 'running' in line)
+    prompt = next(line for line in screen if 'Ready?' in line)
+    assert timing.index('running') == prompt.index('Ready?')
+    assert screen.index(timing) < screen.index(prompt)
+
+
+def test_prompt_is_erased_once_answered(pytester, pty_session):
     pytester.makepyfile(ASK)
     lines, _ = pty_session(['--pretty'], [('Board name?', 'rpi4\n', 0.1)])
-    prompts = [line for line in lines if 'Board name?' in line]
-    assert len(prompts) == 1
+    assert not any('Board name?' in line for line in lines)
 
 
 def test_waiting_does_not_count_towards_max_runtime(pytester, pty_session):

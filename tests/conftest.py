@@ -58,7 +58,13 @@ def pty_session(pytester, monkeypatch):
     monkeypatch.delenv('FORCE_COLOR', raising=False)
     monkeypatch.setenv('COLUMNS', '100')
 
+    def render(chunks):
+        screen = pyte.Screen(100, 400)
+        pyte.Stream(screen).feed(b''.join(chunks).decode(errors='replace'))
+        return [line.rstrip() for line in screen.display if line.strip()]
+
     def run(args, script):
+        run.snapshots = []  # screen at the time each scripted answer was typed
         master, slave = pty.openpty()
         proc = subprocess.Popen(
             [sys.executable, '-m', 'pytest', '-p', 'no:cacheprovider', *args],
@@ -86,12 +92,11 @@ def pty_session(pytester, monkeypatch):
             while pending and pending[0][0].encode() in seen:
                 _, send, delay = pending.pop(0)
                 seen = b''
+                run.snapshots.append(render(chunks))
                 time.sleep(delay)
                 os.write(master, send.encode())
         proc.wait(timeout=30)
         os.close(master)
-        screen = pyte.Screen(100, 400)
-        pyte.Stream(screen).feed(b''.join(chunks).decode(errors='replace'))
-        return [line.rstrip() for line in screen.display if line.strip()], proc.returncode
+        return render(chunks), proc.returncode
 
     return run

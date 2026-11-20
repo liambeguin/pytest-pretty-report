@@ -178,6 +178,9 @@ class WarningEntry(NamedTuple):
 WARNINGS_DOCS = 'https://docs.pytest.org/en/stable/how-to/capture-warnings.html'
 
 
+_PROMPT_INDENT = '  '  # spinner column plus padding of the running line
+
+
 def _readline(stream, *, secret: bool) -> str:
     if not secret:
         return stream.readline()
@@ -249,6 +252,28 @@ class PrettyReporter:
         finally:
             capman.resume_global_capture()
 
+    def _show_prompt(self, message: str) -> int:
+        '''Print the running test, then the prompt indented under its name.
+
+        The prompt is aligned with the timing row of the live line (past the
+        spinner). Returns the number of rows printed.
+        '''
+        rows = 0
+        if self._running is not None:
+            self.console.print(self._running)
+            rows += len(self.console.render_lines(self._running, pad=False))
+        prompt = Text(_PROMPT_INDENT + message, style='bold')
+        rows += len(self.console.render_lines(prompt, pad=False))
+        self.console.print(prompt, end='', highlight=False)
+        self.console.file.flush()
+        return rows
+
+    def _erase(self, rows: int) -> None:
+        '''Remove what _show_prompt printed, like the live line is removed.'''
+        if self.console.is_terminal:
+            self.console.file.write(f'\x1b[{rows}F\x1b[J')  # up, column 0, clear down
+            self.console.file.flush()
+
     def prompt(self, message: str, secret: bool) -> str:  # noqa: FBT001
         '''Ask the user a question on the terminal and return the answer.
 
@@ -257,13 +282,13 @@ class PrettyReporter:
         with self._live_paused(), self._capture_suspended():
             if not (sys.stdin and sys.stdin.isatty()):
                 pytest.skip(NO_TERMINAL)
-            self.console.print(Text(message), end='', highlight=False)
-            self.console.file.flush()
+            rows = self._show_prompt(message)
             try:
                 line = _readline(sys.stdin, secret=secret)
             finally:
                 if secret:
-                    self.console.print()
+                    self.console.print()  # the user's Enter was not echoed
+                self._erase(rows)
         if line == '':
             pytest.fail('no answer given: end of input', pytrace=False)
         return line.rstrip('\r\n')
