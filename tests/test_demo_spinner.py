@@ -47,3 +47,15 @@ def test_demo_output():
         print(f'demo stdout line {i}')
         time.sleep(1)
     print('demo done')
+
+
+@pytest.mark.xfail(raises=pytest.fail.Exception, reason='interrupted by design')
+@pretty_report.slow(runtime=timedelta(seconds=3), max_runtime=timedelta(seconds=4))
+def test_demo_timeout(request):
+    '''Run with `--enforce-max-runtime`: interrupted after 4s instead of 30s.
+
+    Without the flag it is skipped, so the regular suite stays quick.
+    '''
+    if not request.config.getoption('enforce_max_runtime'):
+        pytest.skip('run with --enforce-max-runtime to see the interruption')
+    time.sleep(30)
