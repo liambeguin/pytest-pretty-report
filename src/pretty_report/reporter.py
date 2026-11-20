@@ -28,6 +28,7 @@ from rich.text import Text
 
 from .format import format_duration
 from .markers import MARKER_NAME
+from .userinput import NO_TERMINAL
 
 STYLES = {
     'PASSED': 'green',
@@ -177,6 +178,24 @@ class WarningEntry(NamedTuple):
 WARNINGS_DOCS = 'https://docs.pytest.org/en/stable/how-to/capture-warnings.html'
 
 
+def _readline(stream, *, secret: bool) -> str:
+    if not secret:
+        return stream.readline()
+    try:
+        import termios
+    except ImportError:  # not POSIX: cannot hide the echo
+        return stream.readline()
+    fd = stream.fileno()
+    old = termios.tcgetattr(fd)
+    hidden = list(old)
+    hidden[3] &= ~termios.ECHO
+    try:
+        termios.tcsetattr(fd, termios.TCSADRAIN, hidden)
+        return stream.readline()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 class PrettyReporter:
     def __init__(self, config, console: Console | None = None):
         self.config = config
@@ -217,6 +236,37 @@ class PrettyReporter:
         except (AttributeError, OSError, ValueError):  # no real fd (e.g. StringIO)
             return stream
         return self._dup_file
+
+    @contextlib.contextmanager
+    def _capture_suspended(self):
+        capman = self.config.pluginmanager.getplugin('capturemanager')
+        if capman is None:
+            yield
+            return
+        capman.suspend_global_capture(in_=True)  # stdin too, unlike disabled()
+        try:
+            yield
+        finally:
+            capman.resume_global_capture()
+
+    def prompt(self, message: str, secret: bool) -> str:  # noqa: FBT001
+        '''Ask the user a question on the terminal and return the answer.
+
+        Capture is suspended meanwhile: it replaces stdin while tests run.
+        '''
+        with self._live_paused(), self._capture_suspended():
+            if not (sys.stdin and sys.stdin.isatty()):
+                pytest.skip(NO_TERMINAL)
+            self.console.print(Text(message), end='', highlight=False)
+            self.console.file.flush()
+            try:
+                line = _readline(sys.stdin, secret=secret)
+            finally:
+                if secret:
+                    self.console.print()
+        if line == '':
+            pytest.fail('no answer given: end of input', pytrace=False)
+        return line.rstrip('\r\n')
 
     # -- API expected by plugins that talk to the terminal reporter ----------
     @property

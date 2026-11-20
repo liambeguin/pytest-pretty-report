@@ -10,6 +10,7 @@ import pytest
 
 from .format import format_duration
 from .markers import MARKER_NAME
+from .userinput import TIMER_ARMED, WAITED
 
 
 def pytest_addoption(parser):
@@ -107,6 +108,22 @@ def pretty_progress(request):
     return NullProgress()
 
 
+@pytest.fixture
+def pretty_input(request):
+    '''Block for an answer typed by the user.
+
+    ``pretty_input('Board name? ', default='rpi4', secret=False)`` returns the
+    answer as a string. Skips the test when there is no terminal to ask on.
+    Waiting does not count towards ``min_runtime``/``max_runtime``.
+    '''
+    from .reporter import PrettyReporter
+    from .userinput import UserInput, builtin_ask
+
+    reporter = request.config.pluginmanager.getplugin('terminalreporter')
+    ask = reporter.prompt if isinstance(reporter, PrettyReporter) else builtin_ask
+    return UserInput(request.node, ask)
+
+
 def check_bounds(duration: float, mark) -> str | None:
     """Return a failure message when ``duration`` is outside the mark's bounds."""
     low, high = mark.kwargs.get('min_runtime'), mark.kwargs.get('max_runtime')
@@ -127,7 +144,7 @@ def pytest_runtest_makereport(item, call):
     mark = item.get_closest_marker(MARKER_NAME)
     if mark is None or call.when != 'call' or not report.passed or hasattr(report, 'wasxfail'):
         return
-    message = check_bounds(report.duration, mark)
+    message = check_bounds(report.duration - item.stash.get(WAITED, 0.0), mark)
     if message is not None:
         report.outcome = 'failed'
         report.longrepr = message
@@ -147,6 +164,7 @@ def _can_interrupt() -> bool:
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_call(item):
     '''Interrupt the test body once it runs past ``max_runtime``.'''
+    item.stash[WAITED] = 0.0  # waiting for the user is not counted
     mark = item.get_closest_marker(MARKER_NAME)
     high = mark.kwargs.get('max_runtime') if mark is not None else None
     if high is None or not _enforcing(item.config):
@@ -173,8 +191,10 @@ def pytest_runtest_call(item):
 
     previous = signal.signal(signal.SIGALRM, interrupt)
     signal.setitimer(signal.ITIMER_REAL, high.total_seconds())
+    item.stash[TIMER_ARMED] = True
     try:
         yield
     finally:
+        item.stash[TIMER_ARMED] = False
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
